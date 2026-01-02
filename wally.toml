@@ -1,5 +1,5 @@
 [package]
-name = "jaeymo/Classy"
+name = "jaeymo/classy"
 description = "A Classy is useful for ..."
 version = "0.1.0"
 license = "MIT"
@@ -9,3 +9,4 @@ private = true
 realm = "shared"
 
 [dependencies]
+Janitor = "howmanysmall/janitor@1.18.3"
