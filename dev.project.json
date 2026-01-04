@@ -1,17 +1,16 @@
 {
-    "name": "Janitor",
+    "name": "classy-dev",
     "tree": {
         "$className": "DataModel",
-        
+
         "ReplicatedStorage": {
             "$className": "ReplicatedStorage",
+
             "Packages": {
                 "$path": "Packages",
-                "$ignoreUnknownInstances": true,
-
+                
                 "Classy": {
-                    "$path": "default.project.json",
-                    "$ignoreUnknownInstances": true
+                    "$path": "lib"
                 }
             }
         }
