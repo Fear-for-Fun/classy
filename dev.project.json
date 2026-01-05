@@ -1,14 +1,10 @@
 {
-    "name": "classy-dev",
+    "name": "Classy",
     "tree": {
         "$className": "DataModel",
-
         "ReplicatedStorage": {
-            "$className": "ReplicatedStorage",
-
             "Packages": {
                 "$path": "Packages",
-                
                 "Classy": {
                     "$path": "lib"
                 }

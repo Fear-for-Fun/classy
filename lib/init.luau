@@ -1,6 +1,8 @@
 --!strict
-local Janitor = require(script.Parent.Janitor)
-local Signal = require(script.Parent.Signal)
+local Packages = script.Parent
+
+local Janitor = require(Packages.Janitor)
+local Signal = require(Packages.Signal)
 
 local PREFIX = "WRAPPER"
 
@@ -21,7 +23,7 @@ export type Classy<T> = typeof(setmetatable({} :: {
     Tracked: { [Instance]: {
         Janitor: Janitor.Janitor,
         Object: T,
-    }} ,
+    }},
 
     OnApplied: Signal.Signal<Instance, T>,
     OnRevoked: Signal.Signal<Instance, T>,
