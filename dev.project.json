@@ -1,5 +1,10 @@
 {
     "name": "Classy",
+    
+    "servePlaceIds": [
+        140403097807647
+    ],
+
     "tree": {
         "$className": "DataModel",
         "ReplicatedStorage": {
