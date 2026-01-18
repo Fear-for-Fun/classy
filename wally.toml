@@ -2,7 +2,7 @@
 authors = ["Jaeymo <jaey.cyber@gmail.com>"]
 description = "A Classy is useful because writing code for instances becomes much better!"
 name = "jaeymo/classy"
-version = "1.0.0"
+version = "1.0.1"
 license = "MIT"
 registry = "https://github.com/UpliftGames/wally-index"
 realm = "shared"

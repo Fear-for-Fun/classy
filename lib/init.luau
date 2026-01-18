@@ -3,7 +3,7 @@
 --[[
 	Classy: A Classy is useful because writing code for instances becomes much better!
 	Author: Jaeymo
-	Version: 1.0.0
+	Version: 1.0.1
 	License: MIT
 	Created: 01/18/2026
 
