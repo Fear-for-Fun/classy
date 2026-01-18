@@ -1,12 +1,10 @@
 [package]
-authors = ["Jaeymo <jaey.cyber@gmail.com>", "KashTheKing <>"]
-description = "A Classy is useful for ..."
+authors = ["Jaeymo <jaey.cyber@gmail.com>"]
+description = "A Classy is useful because writing code for instances becomes much better!"
 name = "jaeymo/classy"
-version = "0.1.0"
+version = "1.0.0"
 license = "MIT"
-exclude = ["**"]
 registry = "https://github.com/UpliftGames/wally-index"
-private = true
 realm = "shared"
 
 [dependencies]
