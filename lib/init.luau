@@ -17,33 +17,30 @@ type Validation = "ClassNames" | "Ancestors"
 export type Janitor = Janitor.Janitor
 export type Signal<T...> = Signal.Signal<T...>
 
-export type Constructable<U, T> = ((Instance, Janitor, T) -> U) | {
-    new: (Instance, Janitor, T) -> U,
+export type Constructable<T> = ((Instance, Janitor) -> T) | {
+    new: (Instance, Janitor) -> T,
 }
 
-export type ClassyConfig<T, V> = {
+export type ClassyConfig<U> = {
     Predicate: ((Instance) -> boolean)?,
     ClassNames: { string }?,
-    Ancestors: { V }?,
-    Shared: T,
+    Ancestors: { U }?,
 }
 
 export type Applied<T, U> = typeof(setmetatable({} :: {
+    Classy: Classy<T, U>,
     Instance: Instance,
-    Shared: T,
-    Data: U,
     Janitor: Janitor,
+    Data: T,
 }, Applied))
-
 
 export type Classy<T, U> = typeof(setmetatable({} :: {
     Tag: string,
-    Shared: T,
-    Constructable: Constructable<U, T>,
     Janitor: Janitor,
-    Predicate: ((Instance) -> boolean)?,
-    Ancestors: { Instance },
     ClassNames: { string },
+    Ancestors: { U },
+    Constructable: Constructable<T>,
+    Predicate: ((Instance) -> boolean)?,
     Applied: { [Instance]: Applied<T, U> },
     InstanceAdded: Signal<Instance, Applied<T, U>>,
     InstanceRevoked: Signal<Instance>,
@@ -63,27 +60,43 @@ local function validate(Instance: Instance, List: { string | Instance }, Fn: str
     return false
 end
 
-local function construct<U, T>(Constructable: Constructable<U, T>, Instance: Instance, JanitorObject: Janitor, Shared: T): U
+local function safeCall<T>(Data: T, Fn: string, ...: any): ...any
+    if typeof(Data) == "table" and typeof(Data[Fn]) == "function" then
+        return (Data::any)[Fn](...)
+    end
+
+    return 
+end
+
+local function safeDestroy<T>(Data: T)
+    if typeof(Data) == "table" then
+        table.clear(Data::any)
+        setmetatable(Data::any, nil)
+    end
+end
+
+local function construct<T>(Constructable: Constructable<T>, Instance: Instance, JanitorObject: Janitor): T
     if typeof(Constructable) == "function" then
-        return Constructable(Instance, JanitorObject, Shared)
+        return Constructable(Instance, JanitorObject)
     end
 
     if typeof(Constructable) == "table" and typeof(Constructable.new) == "function" then
-        return Constructable.new(Instance, JanitorObject, Shared)
+        return Constructable.new(Instance, JanitorObject)
     end
 
     error(`[{script.Name}] Invalid Constructable`)
 end
 
 function Applied.new<T, U>(Instance: Instance, ClassyObject: Classy<T, U>): Applied<T, U>
-    local JanitorObject = Janitor.new()
-    ClassyObject.Janitor:Add(JanitorObject)
+    local AppliedJanitor = Janitor.new()
+    ClassyObject.Janitor:Add(AppliedJanitor)
 
-    local Data: U = construct(ClassyObject.Constructable, Instance, JanitorObject, ClassyObject.Shared)
+    local Data: T = construct(ClassyObject.Constructable, Instance, AppliedJanitor)
+    safeCall(Data, "Init", Data)
 
     return setmetatable({
-        Shared = ClassyObject.Shared,
-        Janitor = JanitorObject,
+        Janitor = AppliedJanitor,
+        Classy = ClassyObject,
         Instance = Instance,
         Data = Data,
     }, Applied)
@@ -95,11 +108,16 @@ end
 
 function Applied.Destroy<T, U>(self: Applied<T, U>)
     self.Janitor:Destroy()
+
+    safeCall(self.Data, "Destroy", self.Data)
+    safeDestroy(self.Data)
+
+    table.clear(self::any)
+    setmetatable(self::any, nil)
 end
 
-function Classy.new<T, U, V>(Tag: string, Constructable: Constructable<U, T>, ClassyConfig: ClassyConfig<T, V>?): Classy<T, U>
-    local Config: ClassyConfig<T, V> = ClassyConfig or {} :: any
-    local Shared: T = Config.Shared or {} :: any
+function Classy.new<T, U>(Tag: string, Constructable: Constructable<T>, ClassyConfig: ClassyConfig<U>?): Classy<T, U>
+    local Config: ClassyConfig<U> = ClassyConfig or {} :: any
 
     return setmetatable({
         Tag = Tag,
@@ -107,7 +125,6 @@ function Classy.new<T, U, V>(Tag: string, Constructable: Constructable<U, T>, Cl
 
         ClassNames = table.freeze(Config.ClassNames or {}),
         Ancestors = table.freeze(Config.Ancestors or {}),
-        Shared = Shared,
         Predicate = Config.Predicate,
 
         Applied = {},
@@ -141,7 +158,7 @@ function Classy.CanBeApplied<T, U>(self: Classy<T, U>, Instance: Instance): bool
         return false
     end
 
-    if not validate(Instance, self.Ancestors, "IsDescendantOf") then
+    if not validate(Instance, (self.Ancestors :: any) :: { Instance }, "IsDescendantOf") then
         return false
     end
 
@@ -156,14 +173,24 @@ function Classy.GetApplied<T, U>(self: Classy<T, U>, Instance: Instance): Applie
     return self.Applied[Instance]
 end
 
+function Classy.GetAll<T, U>(self: Classy<T, U>): { [Instance]: Applied<T, U> }
+    return self.Applied
+end
+
 function Classy.Apply<T, U>(self: Classy<T, U>, Instance: Instance): Applied<T, U>
     local Existing = self:GetApplied(Instance)
     if Existing then return Existing end
 
-    Instance:AddTag(self.Tag)
-
     local AppliedObject = Applied.new(Instance, self)
     self.Applied[Instance] = AppliedObject
+
+    local Connection: RBXScriptConnection
+    Connection = Instance.AncestryChanged:Connect(function()
+        if not self:CanBeApplied(Instance) then
+            self:Revoke(Instance)
+            Connection:Disconnect()
+        end
+    end)
 
     self.InstanceAdded:Fire(Instance, AppliedObject)
     return AppliedObject
@@ -192,7 +219,7 @@ function Classy.Destroy<T, U>(self: Classy<T, U>)
 end
 
 return {
-    new = function<T, U, V>(Tag: string, Constructable: Constructable<U, T>, Config: ClassyConfig<T, V>): Classy<T, U>
+    new = function<T, U>(Tag: string, Constructable: Constructable<T>, Config: ClassyConfig<U>?): Classy<T, U>
         local ClassyObject = Classy.new(Tag, Constructable, Config)
         ClassyObject:Init()
 

@@ -10,13 +10,12 @@ export type KillPart = typeof(setmetatable({} :: {
 }, KillPartClass))
 
 
-function KillPartClass.new(Instance, Janitor, Shared): KillPart
-    print(Instance, Janitor, Shared)
+function KillPartClass.new(Instance, Janitor): KillPart
+    print(Instance, Janitor)
 
     return setmetatable({
         KillPart = Instance :: BasePart,
         Janitor = Janitor,
-        Shared = Shared
     }, KillPartClass)
 end
 
@@ -31,12 +30,9 @@ end
 local ClassyObject = Classy.new("KillPart", KillPartClass, {
     ClassNames = { "BasePart" },
     Ancestors = { workspace },
-    Shared = {
-        Foo = 1,
-    },
 })
 
-ClassyObject.InstanceAdded:Connect(function(Inst: Instance, Applied)  
+ClassyObject.InstanceAdded:Connect(function(Inst: Instance, Applied)
     Applied:GetData():Destroy()
 end)
 
