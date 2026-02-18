@@ -32,8 +32,6 @@ Applied.__index = Applied
 local Classy = {}
 Classy.__index = Classy
 
-type Validation = "ClassNames" | "Ancestors"
-
 export type Janitor = Janitor.Janitor
 export type Connection = Signal.Connection
 export type Signal<T...> = Signal.Signal<T...>
@@ -45,6 +43,12 @@ export type Constructable<T> = ((Instance, Janitor) -> T) | {
 export type ClassyConfig<U> = {
     Predicate: ((Instance) -> boolean)?,
     ClassNames: { string }?,
+    NamingConvention: {
+        Init: string?,
+        Destroy: string?,
+    }?,
+    RemoveTagOnCleanup: boolean?,
+    Logging: boolean?,
     Ancestors: { U }?,
 }
 
@@ -58,14 +62,24 @@ export type Applied<T, U> = typeof(setmetatable({} :: {
 export type Classy<T, U> = typeof(setmetatable({} :: {
     Tag: string,
     Janitor: Janitor,
-    ClassNames: { string },
+    Logging: boolean,
     Ancestors: { U },
+    ClassNames: { string },
+    NamingConvention: { 
+        Init: string, 
+        Destroy: string, 
+    },
+    RemoveTagOnCleanup: boolean,
     Constructable: Constructable<T>,
     Predicate: ((Instance) -> boolean)?,
     Applied: { [Instance]: Applied<T, U> },
     InstanceAdded: Signal<Instance, Applied<T, U>>,
     InstanceRevoked: Signal<Instance>,
 }, Classy))
+
+local InstanceRegistry = (setmetatable({}, {
+    __mode = "k"
+}) :: any ) :: { [Instance]: { [string]: Applied<any, any> } }
 
 --[=[
 	@private
@@ -131,7 +145,7 @@ function Applied.new<T, U>(Instance: Instance, ClassyObject: Classy<T, U>): Appl
     ClassyObject.Janitor:Add(AppliedJanitor)
 
     local Data: T = construct(ClassyObject.Constructable, Instance, AppliedJanitor)
-    safeCall(Data, "Init", Data)
+    safeCall(Data, ClassyObject.NamingConvention.Init, Data)
 
     return setmetatable({
         Janitor = AppliedJanitor,
@@ -140,7 +154,6 @@ function Applied.new<T, U>(Instance: Instance, ClassyObject: Classy<T, U>): Appl
         Data = Data,
     }, Applied)
 end
-
 
 --[=[
 	@return T
@@ -162,7 +175,7 @@ end
 function Applied.Destroy<T, U>(self: Applied<T, U>)
     self.Janitor:Destroy()
 
-    safeCall(self.Data, "Destroy", self.Data)
+    safeCall(self.Data, self.Classy.NamingConvention.Destroy, self.Data)
     safeDestroy(self.Data)
 
     table.clear(self::any)
@@ -196,7 +209,14 @@ function Classy.new<T, U>(Tag: string, Constructable: Constructable<T>, ClassyCo
 
         ClassNames = table.freeze(Config.ClassNames or {}),
         Ancestors = table.freeze(Config.Ancestors or {}),
+        Logging = Config.Logging or false,
         Predicate = Config.Predicate,
+        RemoveTagOnCleanup = if Config.RemoveTagOnCleanup ~= nil then Config.RemoveTagOnCleanup else true,
+
+        NamingConvention = {
+            Init = Config.NamingConvention and Config.NamingConvention.Init or "Init",
+            Destroy = Config.NamingConvention and Config.NamingConvention.Destroy or "Destroy",
+        },
 
         Applied = {},
         Janitor = Janitor.new(),
@@ -280,8 +300,15 @@ function Classy.Apply<T, U>(self: Classy<T, U>, Instance: Instance): Applied<T, 
     local Existing = self:GetApplied(Instance)
     if Existing then return Existing end
 
+    if self.Logging then
+        print(`[Classy] Applied instance: {Instance:GetFullName()}`)
+    end
+
     local AppliedObject = Applied.new(Instance, self)
     self.Applied[Instance] = AppliedObject
+
+    InstanceRegistry[Instance] = InstanceRegistry[Instance] or {}
+    InstanceRegistry[Instance][self.Tag] = AppliedObject
 
     local Connection: RBXScriptConnection
     Connection = Instance.AncestryChanged:Connect(function()
@@ -315,10 +342,25 @@ function Classy.Revoke<T, U>(self: Classy<T, U>, Instance: Instance)
     local AppliedObject = self:GetApplied(Instance)
     if not AppliedObject then return end
 
+    local Registry = InstanceRegistry[Instance]
+    if Registry then
+        Registry[self.Tag] = nil
+        if not next(Registry) then
+            InstanceRegistry[Instance] = nil
+        end
+    end
+
+    if self.Logging then
+        print(`[Classy] Revoked instance: {Instance:GetFullName()}`)
+    end
+
     AppliedObject:Destroy()
     self.Applied[Instance] = nil
     
-    Instance:RemoveTag(self.Tag)
+    if self.RemoveTagOnCleanup then
+        Instance:RemoveTag(self.Tag)
+    end
+    
     self.InstanceRevoked:Fire(Instance)
 end
 
@@ -364,6 +406,10 @@ function Classy.Destroy<T, U>(self: Classy<T, U>)
         self:Revoke(Instance)
     end
 
+    if self.Logging then
+        print(`[Classy] Cleaned classy for: {self.Tag}`)
+    end
+
     self.Janitor:Destroy()
 
     table.clear(self::any)
@@ -372,9 +418,22 @@ end
 
 return {
     new = function<T, U>(Tag: string, Constructable: Constructable<T>, Config: ClassyConfig<U>?): Classy<T, U>
+        return Classy.new(Tag, Constructable, Config)
+    end,
+
+    create = function<T, U>(Tag: string, Constructable: Constructable<T>, Config: ClassyConfig<U>?): Classy<T, U>
         local ClassyObject = Classy.new(Tag, Constructable, Config)
         ClassyObject:Init()
 
         return ClassyObject
     end,
+
+    getComponent = function(Instance: Instance, Tag: string): Applied<any, any>?
+        return InstanceRegistry[Instance] 
+            and InstanceRegistry[Instance][Tag]
+    end,
+
+    getComponents = function(Instance: Instance): { [string]: Applied<any, any> }?
+        return InstanceRegistry[Instance]
+    end
 }
