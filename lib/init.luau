@@ -435,5 +435,38 @@ return {
 
     getComponents = function(Instance: Instance): { [string]: Applied<any, any> }?
         return InstanceRegistry[Instance]
+    end,
+
+	callOnAllComponents = function(Instance: Instance, MethodName: string, ...: any): ()
+		local Registry = InstanceRegistry[Instance]
+		if not Registry then
+			return
+		end
+
+		for _, AppliedValue in Registry do
+			local Data = (AppliedValue :: any):GetData()
+			local Method = Data and Data[MethodName]
+
+			if typeof(Method) == "function" then
+				Method(Data, ...)
+			end
+		end
+	end,
+
+    applyComponents = function(Instance: Instance, Components: { [string]: { [string]: any } } )
+        if not Components then
+            warn(`[{script.Name}] Missing components`)
+            return
+        end
+
+        for Tag, Data in Components do
+            if Data then
+                for Key, Value in Data do
+                    Instance:SetAttribute(Key, Value)
+                end
+            end
+
+            Instance:AddTag(Tag)
+        end
     end
 }
