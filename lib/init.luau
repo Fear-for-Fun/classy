@@ -3,7 +3,7 @@
 --[[
 	Classy: A Classy is useful because writing code for instances becomes much better!
 	Author: Jaeymo
-	Version: 1.2.0
+	Version: 1.4.0
 	License: MIT
 	Created: 01/18/2026
 
@@ -57,6 +57,7 @@ export type Applied<T, U> = typeof(setmetatable({} :: {
     Instance: Instance,
     Janitor: Janitor,
     Data: T,
+    Triggers: { [string]: true }?,
 }, Applied))
 
 export type Classy<T, U> = typeof(setmetatable({} :: {
@@ -145,6 +146,19 @@ function Applied.new<T, U>(Instance: Instance, ClassyObject: Classy<T, U>): Appl
     ClassyObject.Janitor:Add(AppliedJanitor)
 
     local Data: T = construct(ClassyObject.Constructable, Instance, AppliedJanitor)
+    local TriggerAttributeName = `__classy_triggers_{ClassyObject.Tag}`
+    local RawTriggers = Instance:GetAttribute(TriggerAttributeName)
+
+    local Triggers: { [string]: true }? = nil
+
+    if typeof(RawTriggers) == "string" and RawTriggers ~= "" then
+        Triggers = {}
+
+        for Trigger in string.gmatch(RawTriggers, "[^,]+") do
+            (Triggers :: any)[Trigger] = true
+        end
+    end
+
     safeCall(Data, ClassyObject.NamingConvention.Init, Data)
 
     return setmetatable({
@@ -152,6 +166,7 @@ function Applied.new<T, U>(Instance: Instance, ClassyObject: Classy<T, U>): Appl
         Classy = ClassyObject,
         Instance = Instance,
         Data = Data,
+        Triggers = Triggers,
     }, Applied)
 end
 
@@ -417,6 +432,8 @@ function Classy.Destroy<T, U>(self: Classy<T, U>)
 end
 
 return {
+    version = "1.4.0",
+
     new = function<T, U>(Tag: string, Constructable: Constructable<T>, Config: ClassyConfig<U>?): Classy<T, U>
         return Classy.new(Tag, Constructable, Config)
     end,
@@ -461,12 +478,46 @@ return {
 
         for Tag, Data in Components do
             if Data then
+                local Triggers = Data.triggers
+                local TriggerString = ""
+
                 for Key, Value in Data do
+                    if Key == "triggers" then
+                        continue
+                    end
                     Instance:SetAttribute(Key, Value)
+                end
+
+                if typeof(Triggers) == "table" then
+                    TriggerString = table.concat(Triggers, ",")
+                end
+
+                if TriggerString ~= "" then
+                    Instance:SetAttribute(`__classy_triggers_{Tag}`, TriggerString)
                 end
             end
 
             Instance:AddTag(Tag)
+        end
+    end,
+
+    emit = function(Instance: Instance, TriggerName: string, Context: any?)
+        local Registry = InstanceRegistry[Instance]
+        if not Registry then
+            return
+        end
+
+        for _, AppliedValue in Registry do
+            local Triggers = AppliedValue.Triggers
+
+            if Triggers and Triggers[TriggerName] then
+                local Data = (AppliedValue :: any):GetData()
+                local Method = Data and Data["onApply"]
+
+                if typeof(Method) == "function" then
+                    Method(Data, Context)
+                end
+            end
         end
     end
 }
