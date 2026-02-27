@@ -1,8 +1,10 @@
 [package]
 authors = ["Jaeymo <jaey.cyber@gmail.com>"]
-description = "A Classy is useful because writing code for instances becomes much better!"
+description = "A Classy is useful because writing compositional code for instances becomes much easier!"
 name = "jaeymo/classy"
-version = "1.2.0"
+version = "1.4.0"
+exclude = ["**"]
+include = ["lib", "lib/**", "wally.toml", "wally.lock", "default.project.json", "LICENSE", "README.md"]
 license = "MIT"
 registry = "https://github.com/UpliftGames/wally-index"
 realm = "shared"
