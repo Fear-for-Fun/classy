@@ -3,7 +3,7 @@
 --[[
 	Classy: A Classy is useful because writing code for instances becomes much better!
 	Author: Jaeymo
-	Version: 1.4.0
+	Version: 1.5.0
 	License: MIT
 	Created: 01/18/2026
 
@@ -57,7 +57,7 @@ export type Applied<T, U> = typeof(setmetatable({} :: {
     Instance: Instance,
     Janitor: Janitor,
     Data: T,
-    Triggers: { [string]: true }?,
+    Triggers: { [string]: string }?,
 }, Applied))
 
 export type Classy<T, U> = typeof(setmetatable({} :: {
@@ -136,6 +136,35 @@ local function construct<T>(Constructable: Constructable<T>, Instance: Instance,
 end
 
 --[=[
+	@private
+]=]
+local function emitInternal(Instance: Instance, TriggerName: string, Context: any?)
+	local Registry = InstanceRegistry[Instance]
+	if not Registry then
+		return
+	end
+
+	for _, AppliedValue in Registry do
+		local Triggers = AppliedValue.Triggers
+		if not Triggers then
+			continue
+		end
+
+		local MethodName = Triggers[TriggerName]
+		if not MethodName then
+			continue
+		end
+
+		local Data = (AppliedValue :: any):GetData()
+		local Method = Data and (Data :: any)[MethodName]
+
+		if typeof(Method) == "function" then
+			(Method :: any)(Data, Context)
+		end
+	end
+end
+
+--[=[
 	Instantiates a new Applied object.
     @param Instance Instance
     @param ClassyObject Classy<T, U>
@@ -145,19 +174,27 @@ function Applied.new<T, U>(Instance: Instance, ClassyObject: Classy<T, U>): Appl
     local AppliedJanitor = Janitor.new()
     ClassyObject.Janitor:Add(AppliedJanitor)
 
-    local Data: T = construct(ClassyObject.Constructable, Instance, AppliedJanitor)
-    local TriggerAttributeName = `__classy_triggers_{ClassyObject.Tag}`
-    local RawTriggers = Instance:GetAttribute(TriggerAttributeName)
+	local Data: T = construct(ClassyObject.Constructable, Instance, AppliedJanitor)
+	
+	local TriggerAttributeName = `__classy_triggers_{ClassyObject.Tag}`
+	local RawTriggers = Instance:GetAttribute(TriggerAttributeName)
 
-    local Triggers: { [string]: true }? = nil
+	local Triggers: { [string]: string }? = nil
 
-    if typeof(RawTriggers) == "string" and RawTriggers ~= "" then
-        Triggers = {}
+	if typeof(RawTriggers) == "string" and RawTriggers ~= "" then
+		Triggers = {}
 
-        for Trigger in string.gmatch(RawTriggers, "[^,]+") do
-            (Triggers :: any)[Trigger] = true
-        end
-    end
+		for Pair in string.gmatch(RawTriggers, "[^,]+") do
+			local TriggerName, MethodName = string.match(Pair, "([^:]+):([^:]+)")
+		
+			if TriggerName and MethodName then
+				(Triggers :: {[ string]: string})[TriggerName] = MethodName
+			else
+				-- backwards compatibility
+				(Triggers :: {[ string]: string})[Pair] = "onApply"
+			end
+		end
+	end
 
     safeCall(Data, ClassyObject.NamingConvention.Init, Data)
 
@@ -432,7 +469,7 @@ function Classy.Destroy<T, U>(self: Classy<T, U>)
 end
 
 return {
-    version = "1.4.0",
+    version = "1.5.0",
 
     new = function<T, U>(Tag: string, Constructable: Constructable<T>, Config: ClassyConfig<U>?): Classy<T, U>
         return Classy.new(Tag, Constructable, Config)
@@ -470,54 +507,36 @@ return {
 		end
 	end,
 
-    applyComponents = function(Instance: Instance, Components: { [string]: { [string]: any } } )
-        if not Components then
-            warn(`[{script.Name}] Missing components`)
-            return
-        end
+	applyComponents = function(Instance: Instance, Components: { [string]: { [string]: any } })
+		for Tag, Data in Components do
+			if Data then
+				local Triggers = Data.triggers
+				local TriggerString = ""
 
-        for Tag, Data in Components do
-            if Data then
-                local Triggers = Data.triggers
-                local TriggerString = ""
+				for Key, Value in Data do
+					if Key ~= "triggers" then
+						Instance:SetAttribute(Key, Value)
+					end
+				end
 
-                for Key, Value in Data do
-                    if Key == "triggers" then
-                        continue
-                    end
-                    Instance:SetAttribute(Key, Value)
-                end
+				if typeof(Triggers) == "table" then
+					local Buffer = {} :: { string }
 
-                if typeof(Triggers) == "table" then
-                    TriggerString = table.concat(Triggers, ",")
-                end
+					for TriggerName, MethodName in Triggers do
+						table.insert(Buffer, `{TriggerName}:{MethodName}`)
+					end
 
-                if TriggerString ~= "" then
-                    Instance:SetAttribute(`__classy_triggers_{Tag}`, TriggerString)
-                end
-            end
+					TriggerString = table.concat(Buffer, ",")
+				end
 
-            Instance:AddTag(Tag)
-        end
-    end,
+				if TriggerString ~= "" then
+					Instance:SetAttribute(`__classy_triggers_{Tag}`, TriggerString)
+				end
+			end
 
-    emit = function(Instance: Instance, TriggerName: string, Context: any?)
-        local Registry = InstanceRegistry[Instance]
-        if not Registry then
-            return
-        end
+			Instance:AddTag(Tag)
+		end
+	end,
 
-        for _, AppliedValue in Registry do
-            local Triggers = AppliedValue.Triggers
-
-            if Triggers and Triggers[TriggerName] then
-                local Data = (AppliedValue :: any):GetData()
-                local Method = Data and Data["onApply"]
-
-                if typeof(Method) == "function" then
-                    Method(Data, Context)
-                end
-            end
-        end
-    end
+    emit = emitInternal,
 }
