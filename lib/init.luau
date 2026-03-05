@@ -3,7 +3,7 @@
 --[[
 	Classy: A Classy is useful because writing code for instances becomes much better!
 	Author: Jaeymo
-	Version: 1.5.0
+	Version: 1.6.0
 	License: MIT
 	Created: 01/18/2026
 
@@ -78,6 +78,8 @@ export type Classy<T, U> = typeof(setmetatable({} :: {
     InstanceRevoked: Signal<Instance>,
 }, Classy))
 
+local GlobalRegistry = {} :: { [string]: any }
+
 local InstanceRegistry = (setmetatable({}, {
     __mode = "k"
 }) :: any ) :: { [Instance]: { [string]: Applied<any, any> } }
@@ -103,7 +105,7 @@ end
 	@private
 ]=]
 local function safeCall<T>(Data: T, Fn: string, ...: any): ...any
-    if typeof(Data) == "table" and typeof(Data[Fn]) == "function" then
+    if typeof(Data) == "table" and typeof((Data::any)[Fn]) == "function" then
         return (Data::any)[Fn](...)
     end
 
@@ -469,7 +471,7 @@ function Classy.Destroy<T, U>(self: Classy<T, U>)
 end
 
 return {
-    version = "1.5.0",
+    version = "1.6.0",
 
     new = function<T, U>(Tag: string, Constructable: Constructable<T>, Config: ClassyConfig<U>?): Classy<T, U>
         return Classy.new(Tag, Constructable, Config)
@@ -482,17 +484,21 @@ return {
         return ClassyObject
     end,
 
-    getComponent = function(Instance: Instance, Tag: string): Applied<any, any>?
-        return InstanceRegistry[Instance] 
-            and InstanceRegistry[Instance][Tag]
+	registerGlobal = function(Tag: string, ClassyInstance: any)
+		GlobalRegistry[Tag] = ClassyInstance
+	end,
+	
+	getComponent = function(Inst: Instance, Tag: string): Applied<any, any>?
+		return InstanceRegistry[Inst] 
+			and InstanceRegistry[Inst][Tag]
     end,
 
-    getComponents = function(Instance: Instance): { [string]: Applied<any, any> }?
-        return InstanceRegistry[Instance]
+	getComponents = function(Inst: Instance): { [string]: Applied<any, any> }?
+		return InstanceRegistry[Inst]
     end,
 
-	callOnAllComponents = function(Instance: Instance, MethodName: string, ...: any): ()
-		local Registry = InstanceRegistry[Instance]
+	callOnAllComponents = function(Inst: Instance, MethodName: string, ...: any): ()
+		local Registry = InstanceRegistry[Inst]
 		if not Registry then
 			return
 		end
@@ -507,7 +513,7 @@ return {
 		end
 	end,
 
-	applyComponents = function(Instance: Instance, Components: { [string]: { [string]: any } })
+	applyComponents = function(Inst: Instance, Components: { [string]: { [string]: any } })
 		for Tag, Data in Components do
 			if Data then
 				local Triggers = Data.triggers
@@ -515,7 +521,7 @@ return {
 
 				for Key, Value in Data do
 					if Key ~= "triggers" then
-						Instance:SetAttribute(Key, Value)
+						Inst:SetAttribute(Key, Value)
 					end
 				end
 
@@ -530,13 +536,18 @@ return {
 				end
 
 				if TriggerString ~= "" then
-					Instance:SetAttribute(`__classy_triggers_{Tag}`, TriggerString)
-				end
+					Inst:SetAttribute(`__classy_triggers_{Tag}`, TriggerString)
+				end				
 			end
-
-			Instance:AddTag(Tag)
+			
+			Inst:AddTag(Tag)
+			
+			local ClassyInstance = GlobalRegistry[Tag]
+			if ClassyInstance then
+				ClassyInstance:Apply(Inst)
+			end
 		end
 	end,
-
+    
     emit = emitInternal,
 }
