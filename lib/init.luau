@@ -3,7 +3,7 @@
 --[[
 	Classy: A Classy is useful because writing code for instances becomes much better!
 	Author: Jaeymo
-	Version: 1.6.0
+	Version: 1.7.3
 	License: MIT
 	Created: 01/18/2026
 
@@ -36,8 +36,8 @@ export type Janitor = Janitor.Janitor
 export type Connection = Signal.Connection
 export type Signal<T...> = Signal.Signal<T...>
 
-export type Constructable<T> = ((Instance, Janitor) -> T) | {
-    new: (Instance, Janitor) -> T,
+export type Constructable<T> = ((Instance, Janitor, { any }, {[string]: any}?) -> T) | {
+    new: (Instance, Janitor, { any }, {[string]: any}?) -> T,
 }
 
 export type ClassyConfig<U> = {
@@ -47,6 +47,7 @@ export type ClassyConfig<U> = {
         Init: string?,
         Destroy: string?,
     }?,
+    Context: any?,
     RemoveTagOnCleanup: boolean?,
     Logging: boolean?,
     Ancestors: { U }?,
@@ -70,6 +71,7 @@ export type Classy<T, U> = typeof(setmetatable({} :: {
         Init: string, 
         Destroy: string, 
     },
+    Context: { any },
     RemoveTagOnCleanup: boolean,
     Constructable: Constructable<T>,
     Predicate: ((Instance) -> boolean)?,
@@ -125,13 +127,13 @@ end
 --[=[
 	@private
 ]=]
-local function construct<T>(Constructable: Constructable<T>, Instance: Instance, JanitorObject: Janitor): T
+local function construct<T>(Constructable: Constructable<T>, Instance: Instance, JanitorObject: Janitor, Metadata: { [string]: any}?, Context: { any}): T
     if typeof(Constructable) == "function" then
-        return Constructable(Instance, JanitorObject)
+        return Constructable(Instance, JanitorObject, Context, Metadata )
     end
 
     if typeof(Constructable) == "table" and typeof(Constructable.new) == "function" then
-        return Constructable.new(Instance, JanitorObject)
+        return Constructable.new(Instance, JanitorObject, Context, Metadata)
     end
 
     error(`[{script.Name}] Invalid Constructable`)
@@ -170,34 +172,15 @@ end
 	Instantiates a new Applied object.
     @param Instance Instance
     @param ClassyObject Classy<T, U>
+    @param ... any?
 	@return Applied<T, U>
 ]=]
-function Applied.new<T, U>(Instance: Instance, ClassyObject: Classy<T, U>): Applied<T, U>
+function Applied.new<T, U>(Instance: Instance, ClassyObject: Classy<T, U>, Metadata: {[string]: any}?): Applied<T, U>
     local AppliedJanitor = Janitor.new()
     ClassyObject.Janitor:Add(AppliedJanitor)
 
-	local Data: T = construct(ClassyObject.Constructable, Instance, AppliedJanitor)
+	local Data: T = construct(ClassyObject.Constructable, Instance, AppliedJanitor, Metadata, ClassyObject.Context)
 	
-	local TriggerAttributeName = `__classy_triggers_{ClassyObject.Tag}`
-	local RawTriggers = Instance:GetAttribute(TriggerAttributeName)
-
-	local Triggers: { [string]: string }? = nil
-
-	if typeof(RawTriggers) == "string" and RawTriggers ~= "" then
-		Triggers = {}
-
-		for Pair in string.gmatch(RawTriggers, "[^,]+") do
-			local TriggerName, MethodName = string.match(Pair, "([^:]+):([^:]+)")
-		
-			if TriggerName and MethodName then
-				(Triggers :: {[ string]: string})[TriggerName] = MethodName
-			else
-				-- backwards compatibility
-				(Triggers :: {[ string]: string})[Pair] = "onApply"
-			end
-		end
-	end
-
     safeCall(Data, ClassyObject.NamingConvention.Init, Data)
 
     return setmetatable({
@@ -205,7 +188,7 @@ function Applied.new<T, U>(Instance: Instance, ClassyObject: Classy<T, U>): Appl
         Classy = ClassyObject,
         Instance = Instance,
         Data = Data,
-        Triggers = Triggers,
+        Triggers = Metadata and (Metadata.triggers or Metadata.Triggers),
     }, Applied)
 end
 
@@ -272,6 +255,8 @@ function Classy.new<T, U>(Tag: string, Constructable: Constructable<T>, ClassyCo
             Destroy = Config.NamingConvention and Config.NamingConvention.Destroy or "Destroy",
         },
 
+        Context = table.freeze(Config.Context or {}),
+        
         Applied = {},
         Janitor = Janitor.new(),
 
@@ -343,14 +328,15 @@ end
 	Bypasses the `CanBeApplied` check and applies an instance
     
     ```lua
-    local AppliedObjet = ClassyObject:Apply(SomeInstance)
+    local AppliedObject = ClassyObject:Apply(SomeInstance)
     AppliedObject:GetData():DoSomething()
     ```
 
     @param Instance Instance
+    @param Metadata: {[string]: any}?
     @return Applied<T, U>
 ]=]
-function Classy.Apply<T, U>(self: Classy<T, U>, Instance: Instance): Applied<T, U>
+function Classy.Apply<T, U>(self: Classy<T, U>, Instance: Instance, Metadata: { [string]: any }?): Applied<T, U>
     local Existing = self:GetApplied(Instance)
     if Existing then return Existing end
 
@@ -358,7 +344,7 @@ function Classy.Apply<T, U>(self: Classy<T, U>, Instance: Instance): Applied<T, 
         print(`[Classy] Applied instance: {Instance:GetFullName()}`)
     end
 
-    local AppliedObject = Applied.new(Instance, self)
+    local AppliedObject = Applied.new(Instance, self, Metadata)
     self.Applied[Instance] = AppliedObject
 
     InstanceRegistry[Instance] = InstanceRegistry[Instance] or {}
@@ -488,6 +474,10 @@ return {
 		GlobalRegistry[Tag] = ClassyInstance
 	end,
 	
+    getGloballyRegistered = function(Tag: string): Classy<any, any>?
+        return GlobalRegistry[Tag]
+    end,
+
 	getComponent = function(Inst: Instance, Tag: string): Applied<any, any>?
 		return InstanceRegistry[Inst] 
 			and InstanceRegistry[Inst][Tag]
@@ -514,37 +504,12 @@ return {
 	end,
 
 	applyComponents = function(Inst: Instance, Components: { [string]: { [string]: any } })
-		for Tag, Data in Components do
-			if Data then
-				local Triggers = Data.triggers
-				local TriggerString = ""
-
-				for Key, Value in Data do
-					if Key ~= "triggers" then
-						Inst:SetAttribute(Key, Value)
-					end
-				end
-
-				if typeof(Triggers) == "table" then
-					local Buffer = {} :: { string }
-
-					for TriggerName, MethodName in Triggers do
-						table.insert(Buffer, `{TriggerName}:{MethodName}`)
-					end
-
-					TriggerString = table.concat(Buffer, ",")
-				end
-
-				if TriggerString ~= "" then
-					Inst:SetAttribute(`__classy_triggers_{Tag}`, TriggerString)
-				end				
-			end
-			
+		for Tag, Metadata in Components do
 			Inst:AddTag(Tag)
 			
 			local ClassyInstance = GlobalRegistry[Tag]
 			if ClassyInstance then
-				ClassyInstance:Apply(Inst)
+				ClassyInstance:Apply(Inst, Metadata)
 			end
 		end
 	end,
