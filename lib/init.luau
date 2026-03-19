@@ -3,7 +3,7 @@
 --[[
 	Classy: A Classy is useful because writing code for instances becomes much better!
 	Author: Jaeymo
-	Version: 1.7.4
+	Version: 1.7.5
 	License: MIT
 	Created: 01/18/2026
 
@@ -179,7 +179,7 @@ end
 	Returns decoded metadata or nil if timeout.
 ]=]
 local function waitForMetadata(Instance: Instance, Tag: string): {[string]: any}?
-    local ATTRIBUTE = `__{Tag}.._metadata`
+    local ATTRIBUTE = `__{string.lower(Tag)}.._metadata`
 
 	if not Instance:GetAttribute(ATTRIBUTE) then
 		local Changed = Instance:GetAttributeChangedSignal(ATTRIBUTE)
@@ -375,6 +375,10 @@ end
 function Classy.Apply<T, U>(self: Classy<T, U>, Instance: Instance, Metadata: { [string]: any }?): Applied<T, U>
     if self.WaitForMetadata and not Metadata then
         Metadata = waitForMetadata(Instance, self.Tag)
+    end
+
+    if Metadata then
+        Instance:SetAttribute(`_{string.lower(self.Tag)}_metadata`, HttpService:JSONEncode(Metadata))
     end
 
     local Existing = self:GetApplied(Instance)
