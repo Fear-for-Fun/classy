@@ -3,7 +3,7 @@
 --[[
 	Classy: A Classy is useful because writing code for instances becomes much better!
 	Author: Jaeymo
-	Version: 1.7.3
+	Version: 1.7.4
 	License: MIT
 	Created: 01/18/2026
 
@@ -11,11 +11,14 @@
 ]]
 
 local CollectionService = game:GetService("CollectionService")
+local HttpService = game:GetService("HttpService")
 
 local Packages = script.Parent
 
 local Janitor = require(Packages.Janitor)
 local Signal = require(Packages.Signal)
+
+local METADATA_TIMEOUT = 7
 
 --[=[
 	@class Applied
@@ -51,6 +54,7 @@ export type ClassyConfig<U> = {
     RemoveTagOnCleanup: boolean?,
     Logging: boolean?,
     Ancestors: { U }?,
+    WaitForMetadata: boolean?,
 }
 
 export type Applied<T, U> = typeof(setmetatable({} :: {
@@ -71,6 +75,7 @@ export type Classy<T, U> = typeof(setmetatable({} :: {
         Init: string, 
         Destroy: string, 
     },
+    WaitForMetadata: boolean,
     Context: { any },
     RemoveTagOnCleanup: boolean,
     Constructable: Constructable<T>,
@@ -169,6 +174,34 @@ local function emitInternal(Instance: Instance, TriggerName: string, Context: an
 end
 
 --[=[
+	@private
+	Waits for metadata on an instance if WaitForMetadata is enabled.
+	Returns decoded metadata or nil if timeout.
+]=]
+local function waitForMetadata(Instance: Instance, Tag: string): {[string]: any}?
+    local ATTRIBUTE = `__{Tag}.._metadata`
+
+	if not Instance:GetAttribute(ATTRIBUTE) then
+		local Changed = Instance:GetAttributeChangedSignal(ATTRIBUTE)
+		local StartTime = os.clock()
+
+		while os.clock() - StartTime < METADATA_TIMEOUT do
+			Changed:Wait()
+			if Instance:GetAttribute(ATTRIBUTE) then
+				break
+			end
+		end
+	end
+
+	local Raw = Instance:GetAttribute(ATTRIBUTE)
+	if Raw then
+		return HttpService:JSONDecode(Raw :: any)
+	end
+
+	return nil
+end
+
+--[=[
 	Instantiates a new Applied object.
     @param Instance Instance
     @param ClassyObject Classy<T, U>
@@ -255,6 +288,7 @@ function Classy.new<T, U>(Tag: string, Constructable: Constructable<T>, ClassyCo
             Destroy = Config.NamingConvention and Config.NamingConvention.Destroy or "Destroy",
         },
 
+        WaitForMetadata = Config.WaitForMetadata or false,
         Context = table.freeze(Config.Context or {}),
         
         Applied = {},
@@ -271,13 +305,15 @@ end
 function Classy.Init<T, U>(self: Classy<T, U>)
     for _, Instance in CollectionService:GetTagged(self.Tag) do
         if self:CanBeApplied(Instance) then
-            self:Apply(Instance)
+            local Metadata = self.WaitForMetadata and waitForMetadata(Instance, self.Tag) or nil
+            self:Apply(Instance, Metadata)
         end
     end
 
     self.Janitor:Add(CollectionService:GetInstanceAddedSignal(self.Tag):Connect(function(Instance: Instance)  
         if self:CanBeApplied(Instance) then
-            self:Apply(Instance)
+            local Metadata = self.WaitForMetadata and waitForMetadata(Instance, self.Tag) or nil
+            self:Apply(Instance, Metadata)
         end
     end))
 
@@ -337,6 +373,10 @@ end
     @return Applied<T, U>
 ]=]
 function Classy.Apply<T, U>(self: Classy<T, U>, Instance: Instance, Metadata: { [string]: any }?): Applied<T, U>
+    if self.WaitForMetadata and not Metadata then
+        Metadata = waitForMetadata(Instance, self.Tag)
+    end
+
     local Existing = self:GetApplied(Instance)
     if Existing then return Existing end
 
