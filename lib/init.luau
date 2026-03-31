@@ -3,7 +3,7 @@
 --[[
 	Classy: A Classy is useful because writing code for instances becomes much better!
 	Author: Jaeymo
-	Version: 1.7.6
+	Version: 1.7.7
 	License: MIT
 	Created: 01/18/2026
 
@@ -130,6 +130,11 @@ local function resolveClassyForTag(Tag: string, Metadata: { [string]: any }?): a
 		return nil
 	end
 
+    local AliasContext = {}
+    AliasContext = table.clone(BaseClassy.Context)
+    AliasContext.tag = Tag
+
+
 	local AliasClassy = Classy.new(Tag, BaseClassy.Constructable, {
 		Predicate = BaseClassy.Predicate,
 		ClassNames = BaseClassy.ClassNames,
@@ -137,7 +142,7 @@ local function resolveClassyForTag(Tag: string, Metadata: { [string]: any }?): a
 			Init = BaseClassy.NamingConvention.Init,
 			Destroy = BaseClassy.NamingConvention.Destroy,
 		},
-		Context = BaseClassy.Context,
+		Context = AliasContext,
 		RemoveTagOnCleanup = BaseClassy.RemoveTagOnCleanup,
 		Logging = BaseClassy.Logging,
 		Ancestors = BaseClassy.Ancestors,
@@ -574,7 +579,7 @@ function Classy.Destroy<T, U>(self: Classy<T, U>)
 end
 
 return {
-	version = "1.7.6",
+	version = "1.7.7",
 
 	new = function<T, U>(Tag: string, Constructable: Constructable<T>, Config: ClassyConfig<U>?): Classy<T, U>
 		return Classy.new(Tag, Constructable, Config)
