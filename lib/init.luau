@@ -3,7 +3,7 @@
 --[[
 	Classy: A Classy is useful because writing code for instances becomes much better!
 	Author: Jaeymo
-	Version: 1.7.5
+	Version: 1.7.6
 	License: MIT
 	Created: 01/18/2026
 
@@ -39,109 +39,175 @@ export type Janitor = Janitor.Janitor
 export type Connection = Signal.Connection
 export type Signal<T...> = Signal.Signal<T...>
 
-export type Constructable<T> = ((Instance, Janitor, { any }, {[string]: any}?) -> T) | {
-    new: (Instance, Janitor, { any }, {[string]: any}?) -> T,
+export type Constructable<T> = ((Instance, Janitor, { any }, { [string]: any }?) -> T) | {
+	new: (Instance, Janitor, { any }, { [string]: any }?) -> T,
 }
 
 export type ClassyConfig<U> = {
-    Predicate: ((Instance) -> boolean)?,
-    ClassNames: { string }?,
-    NamingConvention: {
-        Init: string?,
-        Destroy: string?,
-    }?,
-    Context: any?,
-    RemoveTagOnCleanup: boolean?,
-    Logging: boolean?,
-    Ancestors: { U }?,
-    WaitForMetadata: boolean?,
+	Predicate: ((Instance) -> boolean)?,
+	ClassNames: { string }?,
+	NamingConvention: {
+		Init: string?,
+		Destroy: string?,
+	}?,
+	Context: any?,
+	RemoveTagOnCleanup: boolean?,
+	Logging: boolean?,
+	Ancestors: { U }?,
+	WaitForMetadata: boolean?,
 }
 
-export type Applied<T, U> = typeof(setmetatable({} :: {
-    Classy: Classy<T, U>,
-    Instance: Instance,
-    Janitor: Janitor,
-    Data: T,
-    Triggers: { [string]: string }?,
-}, Applied))
+export type Applied<T, U> = typeof(setmetatable(
+	{} :: {
+		Classy: Classy<T, U>,
+		Instance: Instance,
+		Janitor: Janitor,
+		Data: T,
+		Triggers: { [string]: string }?,
+	},
+	Applied
+	))
 
-export type Classy<T, U> = typeof(setmetatable({} :: {
-    Tag: string,
-    Janitor: Janitor,
-    Logging: boolean,
-    Ancestors: { U },
-    ClassNames: { string },
-    NamingConvention: { 
-        Init: string, 
-        Destroy: string, 
-    },
-    WaitForMetadata: boolean,
-    Context: { any },
-    RemoveTagOnCleanup: boolean,
-    Constructable: Constructable<T>,
-    Predicate: ((Instance) -> boolean)?,
-    Applied: { [Instance]: Applied<T, U> },
-    InstanceAdded: Signal<Instance, Applied<T, U>>,
-    InstanceRevoked: Signal<Instance>,
-}, Classy))
+export type Classy<T, U> = typeof(setmetatable(
+	{} :: {
+		Tag: string,
+		Janitor: Janitor,
+		Logging: boolean,
+		Ancestors: { U },
+		ClassNames: { string },
+		NamingConvention: {
+			Init: string,
+			Destroy: string,
+		},
+		WaitForMetadata: boolean,
+		Context: { any },
+		RemoveTagOnCleanup: boolean,
+		Constructable: Constructable<T>,
+		Predicate: ((Instance) -> boolean)?,
+		Applied: { [Instance]: Applied<T, U> },
+		InstanceAdded: Signal<Instance, Applied<T, U>>,
+		InstanceRevoked: Signal<Instance>,
+	},
+	Classy
+	))
 
 local GlobalRegistry = {} :: { [string]: any }
+local AliasRegistry = {} :: { [string]: { [string]: any } }
 
 local InstanceRegistry = (setmetatable({}, {
-    __mode = "k"
-}) :: any ) :: { [Instance]: { [string]: Applied<any, any> } }
+	__mode = "k",
+}) :: any) :: { [Instance]: { [string]: Applied<any, any> } }
+
+--[=[
+    @private
+    Creates/reuses a Classy alias that points to a base component.
+]=]
+local function resolveClassyForTag(Tag: string, Metadata: { [string]: any }?): any
+	local BaseTag = Metadata and (Metadata.useComponent or Metadata.UseComponent)
+	if not BaseTag then
+		return GlobalRegistry[Tag]
+	end
+
+	if typeof(BaseTag) ~= "string" then
+		warn(`[Classy] Invalid useComponent for tag {Tag}`)
+		return GlobalRegistry[Tag]
+	end
+
+	if BaseTag == Tag then
+		return GlobalRegistry[Tag]
+	end
+
+	AliasRegistry[BaseTag] = AliasRegistry[BaseTag] or {}
+
+	local ExistingAlias = AliasRegistry[BaseTag][Tag]
+	if ExistingAlias then
+		return ExistingAlias
+	end
+
+	local BaseClassy = GlobalRegistry[BaseTag]
+	if not BaseClassy then
+		warn(`[Classy] Missing base component: {BaseTag} (requested by {Tag})`)
+		return nil
+	end
+
+	local AliasClassy = Classy.new(Tag, BaseClassy.Constructable, {
+		Predicate = BaseClassy.Predicate,
+		ClassNames = BaseClassy.ClassNames,
+		NamingConvention = {
+			Init = BaseClassy.NamingConvention.Init,
+			Destroy = BaseClassy.NamingConvention.Destroy,
+		},
+		Context = BaseClassy.Context,
+		RemoveTagOnCleanup = BaseClassy.RemoveTagOnCleanup,
+		Logging = BaseClassy.Logging,
+		Ancestors = BaseClassy.Ancestors,
+		WaitForMetadata = BaseClassy.WaitForMetadata,
+	} :: any)
+	AliasClassy:Init()
+
+	AliasRegistry[BaseTag][Tag] = AliasClassy
+	GlobalRegistry[Tag] = AliasClassy
+
+	return AliasClassy
+end
 
 --[=[
 	@private
 ]=]
 local function validate(Instance: Instance, List: { string | Instance }, Fn: string): boolean
-    if not next(List) then
-        return true
-    end
+	if not next(List) then
+		return true
+	end
 
-    for _, v in List do
-        if (Instance::any)[Fn](Instance, v) then
-            return true
-        end
-    end
-    
-    return false
+	for _, v in List do
+		if (Instance :: any)[Fn](Instance, v) then
+			return true
+		end
+	end
+
+	return false
 end
 
 --[=[
 	@private
 ]=]
 local function safeCall<T>(Data: T, Fn: string, ...: any): ...any
-    if typeof(Data) == "table" and typeof((Data::any)[Fn]) == "function" then
-        return (Data::any)[Fn](...)
-    end
+	if typeof(Data) == "table" and typeof((Data :: any)[Fn]) == "function" then
+		return (Data :: any)[Fn](...)
+	end
 
-    return 
+	return
 end
 
 --[=[
 	@private
 ]=]
 local function safeDestroy<T>(Data: T)
-    if typeof(Data) == "table" then
-        table.clear(Data::any)
-        setmetatable(Data::any, nil)
-    end
+	if typeof(Data) == "table" then
+		table.clear(Data :: any)
+		setmetatable(Data :: any, nil)
+	end
 end
 
 --[=[
 	@private
 ]=]
-local function construct<T>(Constructable: Constructable<T>, Instance: Instance, JanitorObject: Janitor, Metadata: { [string]: any}?, Context: { any}): T
-    if typeof(Constructable) == "function" then
-        return Constructable(Instance, JanitorObject, Context, Metadata )
-    end
+local function construct<T>(
+	Constructable: Constructable<T>,
+	Instance: Instance,
+	JanitorObject: Janitor,
+	Metadata: { [string]: any }?,
+	Context: { any }
+): T
+	if typeof(Constructable) == "function" then
+		return Constructable(Instance, JanitorObject, Context, Metadata)
+	end
 
-    if typeof(Constructable) == "table" and typeof(Constructable.new) == "function" then
-        return Constructable.new(Instance, JanitorObject, Context, Metadata)
-    end
+	if typeof(Constructable) == "table" and typeof(Constructable.new) == "function" then
+		return Constructable.new(Instance, JanitorObject, Context, Metadata)
+	end
 
-    error(`[{script.Name}] Invalid Constructable`)
+	error(`[{script.Name}] Invalid Constructable`)
 end
 
 --[=[
@@ -178,8 +244,8 @@ end
 	Waits for metadata on an instance if WaitForMetadata is enabled.
 	Returns decoded metadata or nil if timeout.
 ]=]
-local function waitForMetadata(Instance: Instance, Tag: string): {[string]: any}?
-    local ATTRIBUTE = `__{string.lower(Tag)}.._metadata`
+local function waitForMetadata(Instance: Instance, Tag: string): { [string]: any }?
+	local ATTRIBUTE = `__{string.lower(Tag)}.._metadata`
 
 	if not Instance:GetAttribute(ATTRIBUTE) then
 		local Changed = Instance:GetAttributeChangedSignal(ATTRIBUTE)
@@ -208,21 +274,21 @@ end
     @param ... any?
 	@return Applied<T, U>
 ]=]
-function Applied.new<T, U>(Instance: Instance, ClassyObject: Classy<T, U>, Metadata: {[string]: any}?): Applied<T, U>
-    local AppliedJanitor = Janitor.new()
-    ClassyObject.Janitor:Add(AppliedJanitor)
+function Applied.new<T, U>(Instance: Instance, ClassyObject: Classy<T, U>, Metadata: { [string]: any }?): Applied<T, U>
+	local AppliedJanitor = Janitor.new()
+	ClassyObject.Janitor:Add(AppliedJanitor)
 
 	local Data: T = construct(ClassyObject.Constructable, Instance, AppliedJanitor, Metadata, ClassyObject.Context)
-	
-    safeCall(Data, ClassyObject.NamingConvention.Init, Data)
 
-    return setmetatable({
-        Janitor = AppliedJanitor,
-        Classy = ClassyObject,
-        Instance = Instance,
-        Data = Data,
-        Triggers = Metadata and (Metadata.triggers or Metadata.Triggers),
-    }, Applied)
+	safeCall(Data, ClassyObject.NamingConvention.Init, Data)
+
+	return setmetatable({
+		Janitor = AppliedJanitor,
+		Classy = ClassyObject,
+		Instance = Instance,
+		Data = Data,
+		Triggers = Metadata and (Metadata.triggers or Metadata.Triggers),
+	}, Applied)
 end
 
 --[=[
@@ -231,7 +297,7 @@ end
     return from a function constructable or a object from a class
 ]=]
 function Applied.GetData<T, U>(self: Applied<T, U>): T
-    return self.Data
+	return self.Data
 end
 
 --[=[
@@ -243,13 +309,13 @@ end
 	:::
 ]=]
 function Applied.Destroy<T, U>(self: Applied<T, U>)
-    self.Janitor:Destroy()
+	self.Janitor:Destroy()
 
-    safeCall(self.Data, self.Classy.NamingConvention.Destroy, self.Data)
-    safeDestroy(self.Data)
+	safeCall(self.Data, self.Classy.NamingConvention.Destroy, self.Data)
+	safeDestroy(self.Data)
 
-    table.clear(self::any)
-    setmetatable(self::any, nil)
+	table.clear(self :: any)
+	setmetatable(self :: any, nil)
 end
 
 --[=[
@@ -271,55 +337,55 @@ end
 	@return Classy<T, U>
 ]=]
 function Classy.new<T, U>(Tag: string, Constructable: Constructable<T>, ClassyConfig: ClassyConfig<U>?): Classy<T, U>
-    local Config: ClassyConfig<U> = ClassyConfig or {} :: any
+	local Config: ClassyConfig<U> = ClassyConfig or {} :: any
 
-    return setmetatable({
-        Tag = Tag,
-        Constructable = Constructable,
+	return setmetatable({
+		Tag = Tag,
+		Constructable = Constructable,
 
-        ClassNames = table.freeze(Config.ClassNames or {}),
-        Ancestors = table.freeze(Config.Ancestors or {}),
-        Logging = Config.Logging or false,
-        Predicate = Config.Predicate,
-        RemoveTagOnCleanup = if Config.RemoveTagOnCleanup ~= nil then Config.RemoveTagOnCleanup else true,
+		ClassNames = Config.ClassNames or {},
+		Ancestors = Config.Ancestors or {},
+		Logging = Config.Logging or false,
+		Predicate = Config.Predicate,
+		RemoveTagOnCleanup = if Config.RemoveTagOnCleanup ~= nil then Config.RemoveTagOnCleanup else true,
 
-        NamingConvention = {
-            Init = Config.NamingConvention and Config.NamingConvention.Init or "Init",
-            Destroy = Config.NamingConvention and Config.NamingConvention.Destroy or "Destroy",
-        },
+		NamingConvention = {
+			Init = Config.NamingConvention and Config.NamingConvention.Init or "Init",
+			Destroy = Config.NamingConvention and Config.NamingConvention.Destroy or "Destroy",
+		},
 
-        WaitForMetadata = Config.WaitForMetadata or false,
-        Context = table.freeze(Config.Context or {}),
-        
-        Applied = {},
-        Janitor = Janitor.new(),
+		WaitForMetadata = Config.WaitForMetadata or false,
+		Context = Config.Context or {},
 
-        InstanceAdded = Signal.new(),
-        InstanceRevoked = Signal.new(),
-    }, Classy)
+		Applied = {},
+		Janitor = Janitor.new(),
+
+		InstanceAdded = Signal.new(),
+		InstanceRevoked = Signal.new(),
+	}, Classy)
 end
 
 --[=[
 	Initializes a Classy object
 ]=]
 function Classy.Init<T, U>(self: Classy<T, U>)
-    for _, Instance in CollectionService:GetTagged(self.Tag) do
-        if self:CanBeApplied(Instance) then
-            local Metadata = self.WaitForMetadata and waitForMetadata(Instance, self.Tag) or nil
-            self:Apply(Instance, Metadata)
-        end
-    end
+	for _, Instance in CollectionService:GetTagged(self.Tag) do
+		if self:CanBeApplied(Instance) then
+			local Metadata = self.WaitForMetadata and waitForMetadata(Instance, self.Tag) or nil
+			self:Apply(Instance, Metadata)
+		end
+	end
 
-    self.Janitor:Add(CollectionService:GetInstanceAddedSignal(self.Tag):Connect(function(Instance: Instance)  
-        if self:CanBeApplied(Instance) then
-            local Metadata = self.WaitForMetadata and waitForMetadata(Instance, self.Tag) or nil
-            self:Apply(Instance, Metadata)
-        end
-    end))
+	self.Janitor:Add(CollectionService:GetInstanceAddedSignal(self.Tag):Connect(function(Instance: Instance)
+		if self:CanBeApplied(Instance) then
+			local Metadata = self.WaitForMetadata and waitForMetadata(Instance, self.Tag) or nil
+			self:Apply(Instance, Metadata)
+		end
+	end))
 
-    self.Janitor:Add(CollectionService:GetInstanceRemovedSignal(self.Tag):Connect(function(Instance: Instance)  
-        self:Revoke(Instance)
-    end))
+	self.Janitor:Add(CollectionService:GetInstanceRemovedSignal(self.Tag):Connect(function(Instance: Instance)
+		self:Revoke(Instance)
+	end))
 end
 
 --[=[
@@ -328,19 +394,19 @@ end
     @return boolean
 ]=]
 function Classy.CanBeApplied<T, U>(self: Classy<T, U>, Instance: Instance): boolean
-    if not validate(Instance, self.ClassNames, "IsA") then
-        return false
-    end
+	if not validate(Instance, self.ClassNames, "IsA") then
+		return false
+	end
 
-    if not validate(Instance, (self.Ancestors :: any) :: { Instance }, "IsDescendantOf") then
-        return false
-    end
+	if not validate(Instance, (self.Ancestors :: any) :: { Instance }, "IsDescendantOf") then
+		return false
+	end
 
-    if self.Predicate and not self.Predicate(Instance) then
-        return false
-    end
+	if self.Predicate and not self.Predicate(Instance) then
+		return false
+	end
 
-    return true
+	return true
 end
 
 --[=[
@@ -349,7 +415,7 @@ end
     @return boolean
 ]=]
 function Classy.GetApplied<T, U>(self: Classy<T, U>, Instance: Instance): Applied<T, U>?
-    return self.Applied[Instance]
+	return self.Applied[Instance]
 end
 
 --[=[
@@ -357,7 +423,7 @@ end
     @return { [Instance]: Applied<T, U> }
 ]=]
 function Classy.GetAll<T, U>(self: Classy<T, U>): { [Instance]: Applied<T, U> }
-    return self.Applied
+	return self.Applied
 end
 
 --[=[
@@ -373,37 +439,39 @@ end
     @return Applied<T, U>
 ]=]
 function Classy.Apply<T, U>(self: Classy<T, U>, Instance: Instance, Metadata: { [string]: any }?): Applied<T, U>
-    if self.WaitForMetadata and not Metadata then
-        Metadata = waitForMetadata(Instance, self.Tag)
-    end
+	if self.WaitForMetadata and not Metadata then
+		Metadata = waitForMetadata(Instance, self.Tag)
+	end
 
-    if Metadata then
-        Instance:SetAttribute(`_{string.lower(self.Tag)}_metadata`, HttpService:JSONEncode(Metadata))
-    end
+	if Metadata then
+		Instance:SetAttribute(`_{string.lower(self.Tag)}_metadata`, HttpService:JSONEncode(Metadata))
+	end
 
-    local Existing = self:GetApplied(Instance)
-    if Existing then return Existing end
+	local Existing = self:GetApplied(Instance)
+	if Existing then
+		return Existing
+	end
 
-    if self.Logging then
-        print(`[Classy] Applied instance: {Instance:GetFullName()}`)
-    end
+	if self.Logging then
+		print(`[Classy] Applied instance: {Instance:GetFullName()}`)
+	end
 
-    local AppliedObject = Applied.new(Instance, self, Metadata)
-    self.Applied[Instance] = AppliedObject
+	local AppliedObject = Applied.new(Instance, self, Metadata)
+	self.Applied[Instance] = AppliedObject
 
-    InstanceRegistry[Instance] = InstanceRegistry[Instance] or {}
-    InstanceRegistry[Instance][self.Tag] = AppliedObject
+	InstanceRegistry[Instance] = InstanceRegistry[Instance] or {}
+	InstanceRegistry[Instance][self.Tag] = AppliedObject
 
-    local Connection: RBXScriptConnection
-    Connection = Instance.AncestryChanged:Connect(function()
-        if not self:CanBeApplied(Instance) then
-            self:Revoke(Instance)
-            Connection:Disconnect()
-        end
-    end)
+	local Connection: RBXScriptConnection
+	Connection = Instance.AncestryChanged:Connect(function()
+		if not self:CanBeApplied(Instance) then
+			self:Revoke(Instance)
+			Connection:Disconnect()
+		end
+	end)
 
-    self.InstanceAdded:Fire(Instance, AppliedObject)
-    return AppliedObject
+	self.InstanceAdded:Fire(Instance, AppliedObject)
+	return AppliedObject
 end
 
 --[=[
@@ -423,29 +491,31 @@ end
     @param Instance Instance
 ]=]
 function Classy.Revoke<T, U>(self: Classy<T, U>, Instance: Instance)
-    local AppliedObject = self:GetApplied(Instance)
-    if not AppliedObject then return end
+	local AppliedObject = self:GetApplied(Instance)
+	if not AppliedObject then
+		return
+	end
 
-    local Registry = InstanceRegistry[Instance]
-    if Registry then
-        Registry[self.Tag] = nil
-        if not next(Registry) then
-            InstanceRegistry[Instance] = nil
-        end
-    end
+	local Registry = InstanceRegistry[Instance]
+	if Registry then
+		Registry[self.Tag] = nil
+		if not next(Registry) then
+			InstanceRegistry[Instance] = nil
+		end
+	end
 
-    if self.Logging then
-        print(`[Classy] Revoked instance: {Instance:GetFullName()}`)
-    end
+	if self.Logging then
+		print(`[Classy] Revoked instance: {Instance:GetFullName()}`)
+	end
 
-    AppliedObject:Destroy()
-    self.Applied[Instance] = nil
-    
-    if self.RemoveTagOnCleanup then
-        Instance:RemoveTag(self.Tag)
-    end
-    
-    self.InstanceRevoked:Fire(Instance)
+	AppliedObject:Destroy()
+	self.Applied[Instance] = nil
+
+	if self.RemoveTagOnCleanup then
+		Instance:RemoveTag(self.Tag)
+	end
+
+	self.InstanceRevoked:Fire(Instance)
 end
 
 --[=[
@@ -462,14 +532,17 @@ end
     @param Callback (Instance: Instance, Applied: Applied<T, U>)
     @return Connection Connection
 ]=]
-function Classy.ObserveApplied<T, U>(self: Classy<T, U>, Callback: (Instance: Instance, Applied: Applied<T, U>) -> ()): Connection
-    for Inst, AppliedObject in self:GetAll() do
-        task.spawn(function()
-            Callback(Inst, AppliedObject :: Applied<T, U>)
-        end)
-    end
+function Classy.ObserveApplied<T, U>(
+	self: Classy<T, U>,
+	Callback: (Instance: Instance, Applied: Applied<T, U>) -> ()
+): Connection
+	for Inst, AppliedObject in self:GetAll() do
+		task.spawn(function()
+			Callback(Inst, AppliedObject :: Applied<T, U>)
+		end)
+	end
 
-    return self.InstanceAdded:Connect(Callback)
+	return self.InstanceAdded:Connect(Callback)
 end
 
 --[=[
@@ -486,50 +559,49 @@ end
 	```
 ]=]
 function Classy.Destroy<T, U>(self: Classy<T, U>)
-    for Instance in self.Applied do
-        self:Revoke(Instance)
-    end
+	for Instance in self.Applied do
+		self:Revoke(Instance)
+	end
 
-    if self.Logging then
-        print(`[Classy] Cleaned classy for: {self.Tag}`)
-    end
+	if self.Logging then
+		print(`[Classy] Cleaned classy for: {self.Tag}`)
+	end
 
-    self.Janitor:Destroy()
+	self.Janitor:Destroy()
 
-    table.clear(self::any)
-    setmetatable(self::any, nil)
+	table.clear(self :: any)
+	setmetatable(self :: any, nil)
 end
 
 return {
-    version = "1.6.0",
+	version = "1.7.6",
 
-    new = function<T, U>(Tag: string, Constructable: Constructable<T>, Config: ClassyConfig<U>?): Classy<T, U>
-        return Classy.new(Tag, Constructable, Config)
-    end,
+	new = function<T, U>(Tag: string, Constructable: Constructable<T>, Config: ClassyConfig<U>?): Classy<T, U>
+		return Classy.new(Tag, Constructable, Config)
+	end,
 
-    create = function<T, U>(Tag: string, Constructable: Constructable<T>, Config: ClassyConfig<U>?): Classy<T, U>
-        local ClassyObject = Classy.new(Tag, Constructable, Config)
-        ClassyObject:Init()
+	create = function<T, U>(Tag: string, Constructable: Constructable<T>, Config: ClassyConfig<U>?): Classy<T, U>
+		local ClassyObject = Classy.new(Tag, Constructable, Config)
+		ClassyObject:Init()
 
-        return ClassyObject
-    end,
+		return ClassyObject
+	end,
 
 	registerGlobal = function(Tag: string, ClassyInstance: any)
 		GlobalRegistry[Tag] = ClassyInstance
 	end,
-	
-    getGloballyRegistered = function(Tag: string): Classy<any, any>?
-        return GlobalRegistry[Tag]
-    end,
+
+	getGloballyRegistered = function(Tag: string): Classy<any, any>?
+		return GlobalRegistry[Tag]
+	end,
 
 	getComponent = function(Inst: Instance, Tag: string): Applied<any, any>?
-		return InstanceRegistry[Inst] 
-			and InstanceRegistry[Inst][Tag]
-    end,
+		return InstanceRegistry[Inst] and InstanceRegistry[Inst][Tag]
+	end,
 
 	getComponents = function(Inst: Instance): { [string]: Applied<any, any> }?
 		return InstanceRegistry[Inst]
-    end,
+	end,
 
 	callOnAllComponents = function(Inst: Instance, MethodName: string, ...: any): ()
 		local Registry = InstanceRegistry[Inst]
@@ -549,14 +621,15 @@ return {
 
 	applyComponents = function(Inst: Instance, Components: { [string]: { [string]: any } })
 		for Tag, Metadata in Components do
-			Inst:AddTag(Tag)
-			
-			local ClassyInstance = GlobalRegistry[Tag]
-			if ClassyInstance then
-				ClassyInstance:Apply(Inst, Metadata)
+			local ClassyInstance = resolveClassyForTag(Tag, Metadata)
+			if not ClassyInstance then
+				continue
 			end
+
+			Inst:AddTag(Tag)
+			ClassyInstance:Apply(Inst, Metadata)
 		end
 	end,
-    
-    emit = emitInternal,
+
+	emit = emitInternal,
 }
