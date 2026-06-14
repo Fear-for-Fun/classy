@@ -1,5 +1,5 @@
 {
     "scripts": {
-        "build:dev": "wally install && rojo sourcemap dev.project.json --output sourcemap.json && wally-package-types --sourcemap sourcemap.json Packages/ DevPackages/"
+        "build:dev": "wally install && rojo sourcemap dev.project.json --output sourcemap.json && wally-package-types --sourcemap sourcemap.json Packages/"
     }
 }

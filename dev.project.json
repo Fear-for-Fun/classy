@@ -2,7 +2,8 @@
     "name": "classy",
     
     "servePlaceIds": [
-        140403097807647
+        140403097807647,
+        87020761948026
     ],
 
     "tree": {
@@ -13,9 +14,12 @@
                 "Classy": {
                     "$path": "lib"
                 }
-            },
-            "DevPackages": {
-                "$path": "DevPackages"
+            }
+        },
+
+        "ServerScriptService": {
+            "testing": {
+                "$path": "testing"
             }
         }
     }

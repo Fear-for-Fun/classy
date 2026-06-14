@@ -19,13 +19,8 @@ dependencies = [["Promise", "evaera/promise@4.0.0"]]
 
 [[package]]
 name = "jaeymo/classy"
-version = "0.1.0"
-dependencies = [["Janitor", "howmanysmall/janitor@1.18.3"], ["Signal", "sleitnick/signal@2.0.3"], ["TestEZ", "roblox/testez@0.4.1"]]
-
-[[package]]
-name = "roblox/testez"
-version = "0.4.1"
-dependencies = []
+version = "2.0.0"
+dependencies = [["Janitor", "howmanysmall/janitor@1.18.3"], ["Signal", "sleitnick/signal@2.0.3"]]
 
 [[package]]
 name = "sleitnick/signal"
