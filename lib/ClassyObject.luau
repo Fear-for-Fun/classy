@@ -96,9 +96,8 @@ end
 	:::
 ]=]
 function Applied.Destroy<T>(self: Applied<T>)
-	self.Janitor:Destroy()
-
 	Util.SafeCall(self.Data, self.Classy.NamingConvention.Destroy, self.Data)
+	self.Janitor:Destroy()
 
 	if self.Classy.Nuke then
 		Util.SafeDestroy(self.Data)

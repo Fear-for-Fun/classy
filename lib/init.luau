@@ -39,7 +39,7 @@ export type Static = {
 }
 
 local Classy = {
-	Version = "2.0.0",
+	Version = "2.1.0",
 	ClassName = "Classy",
 	ClassyObject = ClassyObject.ClassyObject,
 	AppliedObject = ClassyObject.AppliedObject,	
