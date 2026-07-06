@@ -8,14 +8,17 @@ local Registry = require(Internal.Registry)
 local Types = require(Internal.Types)
 
 export type Signal<T...> = Types.Signal<T...>
+
 export type Janitor = Types.Janitor
 
 export type Classy<T> = ClassyObject.Classy<T>
+
 export type Applied<T> = ClassyObject.Applied<T>
 
 export type ConstructorKind = "Class" | "Function"
 
 export type ClassConstructable<T> = Types.ClassConstructable<T>
+
 export type FunctionConstructable<T> = Types.FunctionConstructable<T>
 
 export type ClassyConfig = Types.ClassyConfig
@@ -39,7 +42,7 @@ export type Static = {
 }
 
 local Classy = {
-	Version = "2.1.0",
+	Version = "2.1.1",
 	ClassName = "Classy",
 	ClassyObject = ClassyObject.ClassyObject,
 	AppliedObject = ClassyObject.AppliedObject,	

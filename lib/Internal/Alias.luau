@@ -41,7 +41,7 @@ function Alias.ResolveClassyForTag(Tag: string, Metadata: { [string]: any }?): a
 	AliasContext = table.clone(BaseClassy.Context)
 	AliasContext.tag = Tag
 
-	local AliasClassy = ClassyObject.ClassyObject.new(Tag, BaseClassy.Constructable, {
+	local AliasClassy = ClassyObject.ClassyObject.new(Tag, BaseClassy.Constructable, BaseClassy.ConstructorKind, {
 		Predicate = BaseClassy.Predicate,
 		ClassNames = BaseClassy.ClassNames,
 		NamingConvention = {

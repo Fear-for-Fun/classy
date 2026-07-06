@@ -1,3 +1,4 @@
+
 # Classy
 Classy library. Class is a tag-driven lifecycle manager that makes a composition approach much easier in luau!
 
