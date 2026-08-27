@@ -1,4 +1,4 @@
-![alt text](Classy.png)
+![alt text](assets/Classy.png)
 
 # Classy
 Classy library. Classy is a lifecycle manager that builds on tags to make both composition and OOP architecture more appealing in Luau.
