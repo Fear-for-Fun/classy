@@ -7,6 +7,7 @@ Classy library. Class is a tag-driven lifecycle manager that makes a composition
 - Classy handles the cleanup of a class object's metatable and the provided [Janitor](https://github.com/howmanysmall/Janitor) object.
 - Full generic type safety is preserved when accessing applied objects.
 - If you are a fanatic about object-oriented programming, this is the module for you! Simply create classes for game objects and track them with tags.
+- Classy also heavily supports composition, allowing you to register and fetch attached components (ClassyObjects) from an instance.
 
 ## Installation
 Classy is installable via [wally](https://wally.run/), and you can visit the page [here](https://wally.run/package/jaeymo/classy?version=1.0.1).
@@ -30,42 +31,53 @@ export type KillPart = typeof(setmetatable({} :: {
     Janitor: Classy.Janitor,
 }, KillPartClass))
 
--- every time a part with the "KillPart" tag is added, this runs.
-function KillPartClass.new(Part: Instance, JanitorObject: Classy.Janitor): KillPart
+-- Every time a part with the "KillPart" tag is added, this runs.
+function KillPartClass.new(part: Instance, janitor: Classy.Janitor): KillPart
     return setmetatable({
-        Part = Part :: BasePart,
-        Janitor = JanitorObject,
+        Part = part :: BasePart,
+        Janitor = janitor,
     }, KillPartClass)
 end
 
-function KillPartClass.Init(self: KillPart) -- automatically runs!
-    self:WatchTouchedEvent()
+function KillPartClass.Init(self: KillPart) -- Automatically runs!
+    self:_watchTouchedEvent()
 end
 
 function KillPartClass.DoSomething(self: KillPart)
     print(self)
 end
 
-function KillPartClass.WatchTouchedEvent(self: KillPart)
+function KillPartClass.Destroy(self: KillPart)
+    print("This object has been destroyed!") -- The Janitor and metatable are cleaned externally, no need to do it here.
+end
+
+function KillPartClass._watchTouchedEvent(self: KillPart)
     self.Janitor:Add(self.Part.Touched:Connect(function(Hit: BasePart)
         local Humanoid = Hit.Parent and Hit.Parent:FindFirstChildWhichIsA("Humanoid")
-        if not Humanoid then return end
+        if not Humanoid then 
+            return 
+        end
 
         Humanoid.Health = 0
     end))
 end
 
-function KillPartClass.Destroy(self: KillPart)
-    print("This object has been destroyed!") -- the Janitor and metatable are cleaned externally, no need to do it here.
-end
-
 -- Usage
-local KillPartClassy = Classy.new("KillPart", KillPartClass, {
+local KillPartClassy = Classy.newClass("KillPart", KillPartClass, {
     ClassNames = { "BasePart" },
     Ancestors = { workspace },
 })
 
-KillPartClassy.InstanceAdded:Connect(function(Instance: Instance, Applied)
+-- Another usage example that does the same thing as the first
+local AnotherExample = Classy.new("KillPart", function(instance: Instance, janitor: Classy.Janitor, _, _)
+    return KillPartClass.new(instance, janitor)
+end, {
+    ClassNames = { "BasePart" },
+    Ancestors = { workspace },
+})
+
+-- How to use the ClassyObject
+KillPartClassy.InstanceAdded:Connect(function(Instance, Applied)
     Applied:GetData():DoSomething()
 end)
 ```
