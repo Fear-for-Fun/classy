@@ -1,6 +1,7 @@
+![alt text](Classy.png)
 
 # Classy
-Classy library. Class is a tag-driven lifecycle manager that makes a composition approach much easier in luau!
+Classy library. Classy is a lifecycle manager that builds on tags to make both composition and OOP architecture more appealing in Luau.
 
 ## Why Use Classy?
 - You have the option of tracking instances with classes or functions.

@@ -25,10 +25,10 @@ return {
 		Metadata: { [string]: any }?,
 		Context: { any }
 	): T
-	if typeof(Constructable) == "function" then
-		return Constructable(Instance, JanitorObject, Context, Metadata)
-	end
+		if typeof(Constructable) == "function" then
+			return Constructable(Instance, JanitorObject, Context, Metadata)
+		end
 
-	error(`[{script.Name}] Invalid Constructable`)
+		error(`[{script.Name}] Invalid Constructable`)
 	end,
 }
