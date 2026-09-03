@@ -66,9 +66,11 @@ function Applied.new<T>(Inst: Instance, ClassyObject: Classy<T>, Metadata: { [st
 			ClassyObject.Context
 		)
 	end
-	
-	Util.SafeCall(Data, ClassyObject.NamingConvention.Init, Data)
 
+	if ClassyObject.AutoInit then
+		Util.SafeCall(Data, ClassyObject.NamingConvention.Init, Data)
+	end
+	
 	return setmetatable({
 		Janitor = AppliedJanitor,
 		Classy = ClassyObject,
@@ -128,6 +130,7 @@ export type Classy<T> = typeof(setmetatable(
 			Init: string,
 			Destroy: string,
 		},
+		AutoInit: boolean,
 		WaitForMetadata: boolean,
 		Context: { any },
 		RemoveTagOnCleanup: boolean,
@@ -151,6 +154,11 @@ export type Classy<T> = typeof(setmetatable(
 function Classy.new<T>(Tag: string, Constructable: any, ConstructorKind: ConstructorKind, ClassyConfig: ClassyConfig?): Classy<T>
 	local Config: ClassyConfig = ClassyConfig or {} :: any
 
+	local auto = true
+	if Config and Config.AutoInit == false then
+		auto = false
+	end
+
 	return setmetatable({
 		Tag = Tag,
 		Constructable = Constructable,
@@ -162,7 +170,7 @@ function Classy.new<T>(Tag: string, Constructable: any, ConstructorKind: Constru
 		Predicate = Config.Predicate,
 		RemoveTagOnCleanup = if Config.RemoveTagOnCleanup ~= nil then Config.RemoveTagOnCleanup else true,
 		Nuke = if Config.Nuke ~= nil then Config.Nuke else true,
-
+		AutoInit = auto,
 		NamingConvention = {
 			Init = Config.NamingConvention and Config.NamingConvention.Init or "Init",
 			Destroy = Config.NamingConvention and Config.NamingConvention.Destroy or "Destroy",
